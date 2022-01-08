@@ -1,0 +1,236 @@
+---
+title: "Modeling and prediction for movies"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+  pdf_document: default
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+* * *
+
+## Part 1: Data
+
+The data set we use for this analysis is **movies** data set which is comprised of 651 randomly sampled movies produced and released before 2016. Followings are the related variables.
+
+variable         | description
+---------------- | -----------
+`audience_score`          | Audience score on Rotten Tomatoes
+`genre`           | Genre of movie (Action & Adventure, Comedy, Documentary, Drama, Horror, Mystery & Suspense, Other)
+`runtime`      | Runtime of movie (in minutes)
+`imdb_num_votes`         | Number of votes on IMDB
+`critics_score`       | Critics score on Rotten Tomatoes
+`top200_box`      | Whether or not the movie is in the Top 200 Box Office list on BoxOfficeMojo (no, yes)
+`thtr_rel_month`         | Month the movie is released in theaters
+`best_pic_nom`       | Whether or not the movie was nominated for a best picture Oscar (no, yes)
+`best_pic_win`       | Whether or not the movie won a best picture Oscar (no, yes)
+
+* **Generabizability**: 
+According to the codebook, the data set is comprised of randomly sampled movies. The generalizability of this study is limited by the characteristics of the study movies. However, the analytics results of this study can be generalized to other movies with a large sample size and diverse genres or types.
+
+* **Casualty**: 
+As the data was gathered by observational study method rather than experiment, no causality relationship can be established.
+
+* * *
+
+## Part 2: Research question
+
+The topic for this research analysis is about what attributes make a movie popular and find out the interesting things about movies. To specify, I am interested in whether varriables including genre, runtime, imdb_num_votes, critics_score and top200_box are significant predictors of audience score on Rotten Tomatoes.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+To begin with the genres of the observational movies, we can obviously see that *Drama* movies account for more than 46% of the movies collected, followed by Comedy (13.36%). Look at the genres, we recognize the popularity of Drama and Comedy movies while the animation genre movies have the lowest counts.
+```{r}
+genre_sum <- movies %>% group_by(genre) %>% summarize(counts = n()) 
+genre_sum <- genre_sum %>% mutate(prop = round(counts/sum(counts)*100, digits = 2))%>% arrange(prop)
+# This trick update the factor levels
+genre_sum <- genre_sum %>% mutate(genre=factor(genre, levels=genre))
+ggplot(data=genre_sum, aes(x=genre, y=prop))+
+  geom_bar(fill="deepskyblue2", stat = "identity") + coord_flip() +
+  geom_text(aes(label = prop), hjust = -0.1)+
+  theme_bw()
+
+```
+
+When having a look at the runtime (in minutes) of movies, the distribution is shown as nearly normal distribution with likely right-skewed form. The general runtime of the movies distributes around 100 minutes.
+```{r}
+movies %>% ggplot(aes(x=runtime))+
+  geom_histogram(fill="deepskyblue2", binwidth = 1)+
+  theme_bw()
+```
+
+How are the distributions for different genres? Let's find out with some simple codes.
+```{r}
+movies %>% ggplot(aes(x=runtime, group= genre, fill = genre))+
+                    geom_histogram(binwidth = 1)+
+                    facet_wrap(~genre)
+```
+
+The means of genres' runtime do not show much difference. Animation movies have the lowest runtime mean at 87.22 minutes while musical and performing arts related movies length last most in minutes. There are seven over ten genres which have the duration lasting more than 100 minutes.
+```{r}
+movies %>% 
+  group_by(genre) %>% 
+  summarize(m = mean(runtime, na.rm=T)) %>% 
+  ggplot(aes(x=genre, y=m, group= genre))+
+  geom_bar(fill="deepskyblue2", stat="identity")+ coord_flip()+
+  geom_text(aes(label = round(m, digits=2), hjust = +0.5))
+```
+
+Let us move on to association between the runtime of the movies and audience score on Rotten Tomatoes.
+```{r}
+movies %>% ggplot(aes(x=runtime, y=audience_score))+
+  geom_point(alpha=0.5,na.rm=T, color="deepskyblue2")+
+  geom_smooth(method ='lm',na.rm=T)+
+  theme_bw()
+```
+
+In general, longer movies are positively associated with higher score from audiences.
+
+We can have a look at the correlation between the numerical variables in interest.
+```{r bty-rels, fig.width = 12, fig.height= 5}
+ex_vars <- movies %>% select(runtime,imdb_num_votes,
+                      critics_score)
+ggpairs(ex_vars, na.rm=T)
+```
+
+These variables are not collinear, so adding more than one of these variables to the model may add some value to the model. In this application and with these lowly-correlated predictors, it is reasonable to make use of these variables for linear regression model to predict audience scores.
+
+* * *
+
+## Part 4: Modeling
+
+To dig deep into the relationship between variables and figure out the effective model for good audience score prediction, we select variables and build an initial model with them.
+
+Here we try 5 interested varriables including genre, runtime, imdb_num_votes, critics_score and top200_box for the initial model.
+```{r}
+md <- lm(audience_score~genre+runtime+imdb_num_votes+
+                      critics_score+top200_box+thtr_rel_month+
+                      best_pic_win+best_pic_nom, data = movies)
+summary(md)
+```
+
+As we can see in the summary statistics of the multiple linear regression, there are 2 significant predictors of audience score. They are the number of votes on IMDB and the critics score on Rotten Tomatoes with p-value < 0.05.
+
+Followed the *backward elimination* approach using p-value criteria, we first remove top200_boxyes and refit the model. Again and again, we remove runtime,thtr_rel_month and best_pic_win to obtain the final model, since these variables do not bring the p-value <0.05 (They are not significant predictors of the audience score that we are finding). 
+
+```{r}
+md <- lm(audience_score~genre+imdb_num_votes+
+                      critics_score+
+                      best_pic_nom, data = movies)
+summary(md)
+```
+
+Here we also find out the percentage of the variability of the audience score are explained by this model comprised of 4 above explanatory variables. For this model, 55% of the variability in audience score is explained by these variables.
+
+With the coefficients table, we can write down the least squares regression line for the linear model:
+\[
+  \hat{audience\_score} = (3.404e+01)  + ...+   (3.308e-05) \times imdb\_num\_votes +(4.129e-01)\times critics\_score + (4.427e+00)\times best\_pic\_nomyes
+\]
+
+*... is the brief for genre.*
+
+In the context of the relationship between audience score and these predictors, we can see that for each additional imdb_num_votes, the model predicts 3.308e-05 more audience score, on average.
+
+### Model diagnostics
+
+To assess whether the linear model is reliable, we need to check for (1) 
+linearity, (2) nearly normal residuals, and (3) constant variability.
+
+**Linearity**: We should verify this condition with a plot 
+of the residuals vs. fitted (predicted) values.
+
+```{r residuals}
+ggplot(data = md, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals")
+```
+
+Obviously, the residuals appear to be randomly distributed around 0. The plot is also indicative of a linear relationship.
+
+**Nearly normal residuals**: To check the condition, we can look at a histogram
+
+```{r hist-res}
+ggplot(data = md, aes(x = .resid)) +
+  geom_histogram(binwidth = 5) +
+  xlab("Residuals")
+```
+
+or a normal probability plot of the residuals.
+
+```{r qq-res}
+ggplot(data = md, aes(sample = .resid)) +
+  stat_qq()
+```
+
+The residuals are fairly symmetric, centered at 0, with some outliers at the two tails, so it would be appropriate to deem the the normal distribution of residuals condition met.
+
+**Nearly normal residuals**: Based on the previous residuals plot, we can see that the variablity of the residuals around the 0 line is roughly constant.
+
+* * *
+
+## Part 5: Prediction
+
+we want to use the model we created earlier to predict the evaluation score for the movie *Your Name* with the imdb_num_votes of 235,777, critics_score of 98, genre of Animation, not being nominated for a best picture Oscar.
+
+Now we need to create a new data frame for this movie.
+```{r}
+yourname <- data.frame(imdb_num_votes = 235777, genre = "Animation",
+                       critics_score = 98, best_pic_nom="no" )
+```
+
+Then, I can do the prediction using the predict function:
+```{r}
+predict(md, yourname)
+```
+
+Actually, the audience score for Your Name is 94, our model's result is 88, it is quite cool. 
+
+We can also construct a prediction interval around this prediction, which will provide a measure of uncertainty around the prediction.
+
+```{r}
+predict(md, yourname, interval = "prediction", level = 0.95)
+```
+
+Hence, the model predicts, with 95% confidence, that the movie Your Name is expected to have an evaluation score between 60.02571 and 116.1606.
+
+* * *
+
+```{r}
+model9 <- lm(audience_score ~  genre + runtime + imdb_rating + critics_rating  + best_pic_nom, data = movies)
+summary(model9)
+```
+
+
+## Part 6: Conclusion
+
+In conclusion, there are various contributors to make a movie popular and get the high audience score on Rotten Tomatoes. We have to mention genre, imdb_num_votes, critics_score and best_pic_nom as the good predictors for the effective linear model.
+
+In this analysis, we still face up to some shortcomings like the limited data collection using random sampling method, which leads to the imbalance in the data we study. For example, Drama accounts for the largest proportion but we do not confirm that the imbalance is natural or due to the sampling technique. In reality, there are definitely many other factors that should be taken into account when examing the effection to the audience score. The variables in the given data set may be limited with some numerical and not be so diverse. To some extent, the sample dataset is good enough to develop a linear model to predict the interesting audience score with the acceptable accuracy.
+
+**@ This analysis is conducted by KhuongDT (data includes information from Rotten Tomatoes and IMDB)**
